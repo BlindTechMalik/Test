@@ -3,334 +3,154 @@ import "android.widget.*"
 import "android.view.*"
 import "android.content.*"
 import "android.net.Uri"
+import "android.app.AlertDialog" -- یہ لائن ایڈ کی گئی ہے
 import "com.androlua.*"
-import "java.net.URL"
-import "java.io.BufferedReader"
-import "java.io.InputStreamReader"
+import "java.io.File"
 
---------------------------------------------------
--- AUTO UPDATE SYSTEM
---------------------------------------------------
+-- گٹ ہب لنکس
+local version_url = "https://raw.githubusercontent.com/BlindTechMalik/Test/refs/heads/main/Version.txt"
+local notes_url = "https://raw.githubusercontent.com/BlindTechMalik/Test/refs/heads/main/notes.txt"
+local update_code_url = "https://raw.githubusercontent.com/BlindTechMalik/Test/refs/heads/main/Update.lua"
 
-local currentVersion = "1.0"
+-- آپ کے ٹول کا موجودہ ورژن
+local current_version = "1.0"
 
-local versionUrl = "https://raw.githubusercontent.com/BlindTechMalik/Test/main/Version.txt"
-local notesUrl = "https://raw.githubusercontent.com/BlindTechMalik/Test/main/notes.txt"
-local updateUrl = "https://raw.githubusercontent.com/BlindTechMalik/Test/main/Update.lua"
-
--- Download text from URL
-function getUrlData(url)
-  local success, result = pcall(function()
-    local conn = URL(url).openConnection()
-    conn.connect()
-
-    local reader = BufferedReader(
-      InputStreamReader(conn.getInputStream())
-    )
-
-    local data = ""
-    local line
-
-    while true do
-      line = reader.readLine()
-      if line == nil then
-        break
-      end
-      data = data .. line .. "\n"
-    end
-
-    reader.close()
-    return data
-  end)
-
-  if success then
-    return result
-   else
-    return nil
-  end
+-- ٹرم (Trim) کرنے کا فنکشن
+local function trim(s)
+  if s then return s:gsub("^%s*(.-)%s*$", "%1") else return "" end
 end
 
--- Save update file
-function saveUpdate(code)
-  local path = activity.getLuaDir().."/main.lua"
-
-  local file = io.open(path, "w")
-  file:write(code)
-  file:close()
-end
-
--- Check for updates
-function checkUpdate()
-
-  local onlineVersion = getUrlData(versionUrl)
-
-  if onlineVersion then
-    onlineVersion = onlineVersion:gsub("\n",""):gsub(" ","")
-
-    if onlineVersion ~= currentVersion then
-
-      local notes = getUrlData(notesUrl) or "No update notes"
-      local newCode = getUrlData(updateUrl)
-
-      AlertDialog.Builder(activity)
-      .setTitle("New Update Available")
-      .setMessage(
-      "Current Version: "..currentVersion..
-      "\nNew Version: "..onlineVersion..
-      "\n\nUpdate Notes:\n"..notes
-      )
-      .setPositiveButton("Update",{
-        onClick=function()
-
-          if newCode then
-            saveUpdate(newCode)
-
-            Toast.makeText(
-            activity,
-            "Update Installed Successfully!\nRestart App",
-            Toast.LENGTH_LONG
-            ).show()
-
-           else
-            Toast.makeText(
-            activity,
-            "Failed To Download Update",
-            Toast.LENGTH_LONG
-            ).show()
-          end
-
+-- اپڈیٹ چیک کرنے کا فنکشن
+function checkUpdate(isManual)
+  Http.get(version_url, function(code, content)
+    if code == 200 then
+      local new_version = trim(content) 
+      
+      if new_version ~= current_version then
+        Http.get(notes_url, function(n_code, n_content)
+          local update_notes = n_code == 200 and n_content or "New update available!"
+          
+          -- ڈائیلاگ بنانے کا درست طریقہ
+          local dl = AlertDialog.Builder(activity)
+          dl.setTitle("Update Available: v"..new_version)
+          dl.setMessage(update_notes)
+          dl.setCancelable(false)
+          dl.setPositiveButton("Update Now", {
+            onClick = function()
+              Http.get(update_code_url, function(u_code, u_content)
+                if u_code == 200 then
+                  io.open(activity.getLuaDir().."/main.lua", "w"):write(u_content):close()
+                  Toast.makeText(activity, "Updated! Restarting...", 1).show()
+                  activity.recreate()
+                else
+                  Toast.makeText(activity, "Download failed!", 0).show()
+                end
+              end)
+            end
+          })
+          dl.setNegativeButton("Maybe Later", nil)
+          dl.show()
+        end)
+      else
+        if isManual then
+          Toast.makeText(activity, "No updates available.", 1).show()
         end
-      })
-      .setNegativeButton("Later",nil)
-      .show()
-
+      end
+    else
+      if isManual then
+        Toast.makeText(activity, "Error connecting to server.", 0).show()
+      end
     end
-  end
+  end)
 end
 
---------------------------------------------------
--- SOCIAL MEDIA TOOL
---------------------------------------------------
-
--- Function to generate each social media section
+-- سوشل میڈیا سیکشنز کا فنکشن
 function createSection(platform, hint, baseUrl)
   return {
-    {
-      TextView,
-      text = platform,
-      textSize = "18sp",
-      textStyle = "bold",
-      layout_marginTop = "16dp"
-    },
-
-    {
-      EditText,
-      id = platform:lower().."Input",
-      hint = hint
-    },
-
+    { TextView, text = platform, textSize = "18sp", textStyle = "bold", padding="5dp" },
+    { EditText, id = platform:lower().."Input", hint = hint },
     {
       LinearLayout,
       orientation = "horizontal",
       layout_width = "fill",
-
       {
         Button,
         text = "Copy Link",
         layout_weight = "1",
-
         onClick = function()
-
           local input = _G[platform:lower().."Input"].text
-
           if input ~= "" then
-
             local link = baseUrl..input
-
-            activity
-            .getSystemService(Context.CLIPBOARD_SERVICE)
-            .setText(link)
-
-            Toast.makeText(
-            activity,
-            "Link copied!",
-            1
-            ).show()
-
-           else
-
-            Toast.makeText(
-            activity,
-            "Please enter input",
-            1
-            ).show()
-
+            activity.getSystemService(Context.CLIPBOARD_SERVICE).setText(link)
+            Toast.makeText(activity, "Link copied!", 0).show()
+          else
+            Toast.makeText(activity, "Please enter input", 0).show()
           end
         end
       },
-
       {
         Button,
         text = "Open Profile",
         layout_weight = "1",
-
         onClick = function()
-
           local input = _G[platform:lower().."Input"].text
-
           if input ~= "" then
-
             local link = baseUrl..input
-
-            local intent = Intent(
-            Intent.ACTION_VIEW,
-            Uri.parse(link)
-            )
-
+            local intent = Intent(Intent.ACTION_VIEW, Uri.parse(link))
             activity.startActivity(intent)
-
-           else
-
-            Toast.makeText(
-            activity,
-            "Please enter input",
-            1
-            ).show()
-
+          else
+            Toast.makeText(activity, "Please enter input", 0).show()
           end
-        end
-      },
-
-      {
-        Button,
-        text = "Share Link",
-        layout_weight = "1",
-
-        onClick = function()
-
-          local input = _G[platform:lower().."Input"].text
-
-          if input ~= "" then
-
-            local link = baseUrl..input
-
-            local intent = Intent(Intent.ACTION_SEND)
-
-            intent.setType("text/plain")
-            intent.putExtra(Intent.EXTRA_TEXT, link)
-
-            activity.startActivity(
-            Intent.createChooser(intent, "Share Link")
-            )
-
-           else
-
-            Toast.makeText(
-            activity,
-            "Please enter input",
-            1
-            ).show()
-
-          end
-        end
-      },
-
-      {
-        Button,
-        text = "Clear",
-        layout_weight = "1",
-
-        onClick = function()
-          _G[platform:lower().."Input"].setText("")
         end
       }
     }
   }
 end
 
---------------------------------------------------
--- MAIN LAYOUT
---------------------------------------------------
-
-layout = {
+-- مین لے آؤٹ
+main_layout = {
   ScrollView,
   layout_width = "fill",
   layout_height = "fill",
-
   {
     LinearLayout,
     orientation = "vertical",
     padding = "16dp",
     layout_width = "fill",
-    layout_height = "wrap",
+    id = "scroll_container",
+    { TextView, text = "Current Version: "..current_version, layout_gravity="center", textColor=0xFF757575 },
+    { LinearLayout, orientation="vertical", id="mainContent", layout_width="fill" },
+    {
+      Button,
+      text = "Check For Update",
+      layout_width = "fill",
+      layout_marginTop = "30dp",
+      onClick = function()
+        checkUpdate(true)
+      end
+    }
   }
 }
 
--- Add all sections dynamically
+activity.setContentView(loadlayout(main_layout))
+
 sections = {
-
-  {
-    "WhatsApp",
-    "Enter WhatsApp number",
-    "https://wa.me/"
-  },
-
-  {
-    "Instagram",
-    "Enter Instagram username",
-    "https://instagram.com/"
-  },
-
-  {
-    "Telegram",
-    "Enter Telegram username",
-    "https://t.me/"
-  },
-
-  {
-    "Twitter",
-    "Enter Twitter ID",
-    "https://twitter.com/"
-  },
-
-  {
-    "TikTok",
-    "Enter TikTok username",
-    "https://www.tiktok.com/@"
-  },
-
-  {
-    "YouTube",
-    "Enter channel handle",
-    "https://www.youtube.com/@"
-  }
+  {"WhatsApp", "Enter number", "https://wa.me/"},
+  {"Instagram", "Enter username", "https://instagram.com/"},
+  {"Telegram", "Enter username", "https://t.me/"},
+  {"YouTube", "Enter handle", "https://www.youtube.com/@"}
 }
 
 for _, s in ipairs(sections) do
-  for _, view in ipairs(
-    createSection(s[1], s[2], s[3])
-  ) do
-    table.insert(layout[2], view)
+  local item_views = createSection(s[1], s[2], s[3])
+  for _, v_table in ipairs(item_views) do
+    local view = loadlayout(v_table)
+    local lp = LinearLayout.LayoutParams(-1, -2)
+    lp.setMargins(0, 10, 0, 10) 
+    view.setLayoutParams(lp)
+    mainContent.addView(view)
   end
 end
 
---------------------------------------------------
--- SHOW DIALOG
---------------------------------------------------
-
-dlg = LuaDialog(this)
-
-dlg.setTitle("Social Media Links Generator")
-dlg.setMessage("Create Links")
-
-dlg.setView(loadlayout(layout))
-
-dlg.setButton("Close", nil)
-
-dlg.show()
-
---------------------------------------------------
--- START UPDATE CHECK
---------------------------------------------------
-
-checkUpdate()
+-- اسٹارٹ اپ چیک
+checkUpdate(false)
